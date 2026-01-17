@@ -8,7 +8,7 @@
     "portclean": "cli.js"
   },
   "scripts": {
-    "test": "node --test test",
+    "test": "node --test",
     "smoke": "node cli.js --help"
   },
   "keywords": [
