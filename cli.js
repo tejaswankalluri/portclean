@@ -115,7 +115,7 @@ async function handlePort(port) {
       } else if (args.all) {
         // --all without --force: single confirmation
         const confirmed = await prompt(
-          `Kill all ${processes.length} process(es) on port ${port}? (y/N) `
+          `Kill all ${processes.length} process(es) on port ${port}? (Y/n) `
         );
         if (confirmed) {
           for (const proc of processes) {
@@ -127,7 +127,7 @@ async function handlePort(port) {
       // Without --all: prompt per process
       for (const proc of processes) {
         const confirmed = await prompt(
-          `Process ${proc.pid} (${proc.command}) is using port ${port}. Kill it? (y/N) `
+          `Process ${proc.pid} (${proc.command}) is using port ${port}. Kill it? (Y/n) `
         );
         if (confirmed) {
           await killProcess(proc.pid, proc.command);
@@ -326,7 +326,8 @@ function prompt(question) {
 
     rl.question(question, (answer) => {
       rl.close();
-      resolve(answer.toLowerCase() === 'y');
+      const response = answer.trim().toLowerCase();
+      resolve(response === '' || response === 'y' || response === 'yes');
     });
   });
 }

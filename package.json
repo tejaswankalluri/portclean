@@ -1,6 +1,6 @@
 {
   "name": "portclean",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Kill processes using specific ports on macOS, Linux, and Windows",
   "type": "module",
   "main": "cli.js",
