@@ -1,0 +1,27 @@
+{
+  "name": "portclean",
+  "version": "1.0.0",
+  "description": "Kill processes using specific ports on macOS, Linux, and Windows",
+  "type": "module",
+  "main": "cli.js",
+  "bin": {
+    "portclean": "cli.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "smoke": "node cli.js --help"
+  },
+  "keywords": [
+    "cli",
+    "port",
+    "kill",
+    "process"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "mri": "^1.2.0",
+    "picocolors": "^1.0.0"
+  },
+  "devDependencies": {}
+}
