@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 
-import { execSync, exec } from 'child_process';
+import { execSync } from 'child_process';
 import { kill } from 'process';
-import { stdin, stdout, stderr } from 'process';
+import { stdin, stdout } from 'process';
 import parseArgs from 'mri';
 import colors from 'picocolors';
 import * as readline from 'readline';
@@ -10,26 +10,63 @@ import * as readline from 'readline';
 const VERSION = '1.0.0';
 const PLATFORM = process.platform;
 
-// Parse CLI arguments
-const args = parseArgs(process.argv.slice(2), {
-  alias: {
-    h: 'help',
-    v: 'version',
-    f: 'force',
-    a: 'all',
-  },
-});
+// Parse ports (single numbers or inclusive ranges like 3000-3010)
+function parsePorts(inputs) {
+  const ports = new Set();
+  const errors = [];
 
-// Handle help flag
-if (args.help) {
-  console.log(`
+  for (const input of inputs) {
+    if (typeof input !== 'string') {
+      errors.push(`Invalid port input: ${input}`);
+      continue;
+    }
+
+    if (input.includes('-')) {
+      const [startStr, endStr] = input.split('-', 2);
+      const start = parseInt(startStr, 10);
+      const end = parseInt(endStr, 10);
+
+      if (Number.isNaN(start) || Number.isNaN(end) || start < 1 || end > 65535 || start > end) {
+        errors.push(`Error: Invalid port range ${input}`);
+        continue;
+      }
+
+      for (let p = start; p <= end; p++) {
+        ports.add(p);
+      }
+      continue;
+    }
+
+    const port = parseInt(input, 10);
+    if (Number.isNaN(port) || port < 1 || port > 65535) {
+      errors.push(`Error: Invalid port ${input}`);
+      continue;
+    }
+    ports.add(port);
+  }
+
+  return { ports: Array.from(ports), errors };
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2), {
+    alias: {
+      h: 'help',
+      v: 'version',
+      f: 'force',
+      a: 'all',
+    },
+  });
+
+  if (args.help) {
+    console.log(`
 ${colors.bold('portclean')} - Kill processes using specific ports
 
 ${colors.bold('Usage:')}
   portclean [ports...] [options]
 
 ${colors.bold('Arguments:')}
-  ports         Port number(s) to target
+  ports         Port number(s) or ranges to target (e.g. 3000 or 3000-3010)
 
 ${colors.bold('Options:')}
   --force, -f   Skip confirmation prompt
@@ -39,59 +76,50 @@ ${colors.bold('Options:')}
 
 ${colors.bold('Examples:')}
   portclean 3000                    Kill process on port 3000
-  portclean 3000 8080               Kill processes on ports 3000 and 8080
+  portclean 3000 8080 9000          Kill processes on multiple ports
+  portclean 3000-3010               Kill processes on ports 3000 through 3010
   portclean 3000 --force            Kill port 3000 without confirmation
   portclean 3000 --all              Kill all processes using port 3000
   portclean 3000 8080 --force --all Kill all processes on both ports without confirmation
 `);
-  process.exit(0);
-}
-
-// Handle version flag
-if (args.version) {
-  console.log(`portkill v${VERSION}`);
-  process.exit(0);
-}
-
-// Get ports from positional arguments
-const ports = args._;
-
-// Validate ports
-if (ports.length === 0) {
-  console.error(colors.red('Error: No ports specified'));
-  process.exit(1);
-}
-
-const validPorts = ports.filter((p) => {
-  const port = parseInt(p, 10);
-  if (isNaN(port) || port < 1 || port > 65535) {
-    console.error(colors.red(`Error: Invalid port ${p}`));
-    return false;
-  }
-  return true;
-});
-
-if (validPorts.length === 0) {
-  process.exit(1);
-}
-
-// Main execution
-(async () => {
-  try {
-    for (const port of validPorts) {
-      await handlePort(parseInt(port, 10));
-    }
     process.exit(0);
-  } catch (error) {
-    console.error(colors.red(`Error: ${error.message}`));
+  }
+
+  if (args.version) {
+    console.log(`portkill v${VERSION}`);
+    process.exit(0);
+  }
+
+  const rawPorts = args._;
+
+  if (rawPorts.length === 0) {
+    console.error(colors.red('Error: No ports specified'));
     process.exit(1);
   }
-})();
+
+  const { ports, errors: portErrors } = parsePorts(rawPorts);
+  portErrors.forEach((msg) => console.error(colors.red(msg)));
+
+  if (ports.length === 0) {
+    process.exit(1);
+  }
+
+  for (const port of ports) {
+    await handlePort(port, args);
+  }
+
+  process.exit(0);
+}
 
 /**
  * Handle killing processes on a specific port
  */
-async function handlePort(port) {
+async function handlePort(port, args) {
+  if (isNaN(port) || port < 1 || port > 65535) {
+    console.error(colors.red(`Error: Invalid port ${port}`));
+    return;
+  }
+
   try {
     const processes = await getProcessesOnPort(port);
 
@@ -108,12 +136,10 @@ async function handlePort(port) {
     if (args.force || args.all) {
       // If --force or --all, show single confirmation per port (or none with --force)
       if (args.force) {
-        // Kill without confirmation
         for (const proc of processes) {
           await killProcess(proc.pid, proc.command);
         }
       } else if (args.all) {
-        // --all without --force: single confirmation
         const confirmed = await prompt(
           `Kill all ${processes.length} process(es) on port ${port}? (Y/n) `
         );
@@ -124,7 +150,6 @@ async function handlePort(port) {
         }
       }
     } else {
-      // Without --all: prompt per process
       for (const proc of processes) {
         const confirmed = await prompt(
           `Process ${proc.pid} (${proc.command}) is using port ${port}. Kill it? (Y/n) `
@@ -156,18 +181,21 @@ async function getProcessesOnPort(port) {
  * Get processes on macOS/Linux using lsof or netstat
  */
 async function getProcessesPosix(port) {
+  // Suppress stderr from system commands to avoid leaking raw tool logs
+  const execOpts = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
+
   try {
-    // Try lsof first
     try {
-      const output = execSync(`lsof -i :${port} -n -P`, { encoding: 'utf8' });
+      const output = execSync(`lsof -i :${port} -n -P`, execOpts);
       return parseLsofOutput(output);
     } catch {
-      // Fallback to netstat
-      const output = execSync('netstat -anp', { encoding: 'utf8' });
-      return parseNetstatOutput(output, port);
+      if (PLATFORM === 'linux') {
+        const output = execSync('netstat -anp', execOpts);
+        return parseNetstatOutput(output, port);
+      }
+      return [];
     }
-  } catch (error) {
-    console.error(colors.red(`Failed to get processes on port ${port}: ${error.message}`));
+  } catch {
     return [];
   }
 }
@@ -176,7 +204,7 @@ async function getProcessesPosix(port) {
  * Parse lsof output
  */
 function parseLsofOutput(output) {
-  const lines = output.trim().split('\n').slice(1); // Skip header
+  const lines = output.trim().split('\n').slice(1);
   const processes = [];
 
   for (const line of lines) {
@@ -186,7 +214,6 @@ function parseLsofOutput(output) {
       const command = parts[0];
 
       if (!isNaN(pid) && pid > 0) {
-        // Check if already added
         if (!processes.find((p) => p.pid === pid)) {
           processes.push({ pid, command });
         }
@@ -201,7 +228,7 @@ function parseLsofOutput(output) {
  * Parse netstat output for a specific port
  */
 function parseNetstatOutput(output, port) {
-  const lines = output.trim().split('\n').slice(1); // Skip header
+  const lines = output.trim().split('\n').slice(1);
   const processes = [];
 
   for (const line of lines) {
@@ -213,19 +240,17 @@ function parseNetstatOutput(output, port) {
 
       if (match && state === 'LISTEN') {
         const pid = parseInt(match[1], 10);
-        const proto = parts[0];
         const addr = parts[3];
         const addrParts = addr.split(':');
         const addrPort = addrParts[addrParts.length - 1];
 
         if (parseInt(addrPort, 10) === port && !isNaN(pid) && pid > 0) {
-          // Get command name
           let command = 'unknown';
           try {
             const psOutput = execSync(`ps -p ${pid} -o comm=`, { encoding: 'utf8' });
             command = psOutput.trim();
           } catch {
-            // Use default
+            // ignore
           }
 
           if (!processes.find((p) => p.pid === pid)) {
@@ -247,7 +272,7 @@ async function getProcessesWindows(port) {
     const netstatOutput = execSync('netstat -ano', { encoding: 'utf8' });
     const pids = new Set();
 
-    const lines = netstatOutput.trim().split('\n').slice(4); // Skip header
+    const lines = netstatOutput.trim().split('\n').slice(4);
     for (const line of lines) {
       const parts = line.trim().split(/\s+/);
       if (parts.length >= 5) {
@@ -279,7 +304,7 @@ async function getProcessesWindows(port) {
           command = taskLine;
         }
       } catch {
-        // Use default
+        // ignore
       }
 
       processes.push({ pid, command });
@@ -300,11 +325,9 @@ async function killProcess(pid, command) {
     if (PLATFORM === 'win32') {
       execSync(`taskkill /PID ${pid} /F`, { encoding: 'utf8' });
     } else {
-      // Try using process.kill first
       try {
         kill(pid, 'SIGKILL');
       } catch {
-        // Fallback to shell command
         execSync(`kill -9 ${pid}`);
       }
     }
@@ -331,3 +354,12 @@ function prompt(question) {
     });
   });
 }
+
+if (import.meta.url === new URL(process.argv[1], 'file:').href) {
+  main().catch((error) => {
+    console.error(colors.red(`Error: ${error.message}`));
+    process.exit(1);
+  });
+}
+
+export { parsePorts };

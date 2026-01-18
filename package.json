@@ -1,6 +1,6 @@
 {
   "name": "portclean",
-  "version": "1.0.1",
+  "version": "1.1.0",
   "description": "Kill processes using specific ports on macOS, Linux, and Windows",
   "type": "module",
   "main": "cli.js",
@@ -17,8 +17,16 @@
     "kill",
     "process"
   ],
-  "author": "",
+  "author": "Tejaswan Kalluri",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/tejaswankalluri/portclean.git"
+  },
+  "bugs": {
+    "url": "https://github.com/tejaswankalluri/portclean/issues"
+  },
+  "homepage": "https://github.com/tejaswankalluri/portclean#readme",
   "dependencies": {
     "mri": "^1.2.0",
     "picocolors": "^1.0.0"

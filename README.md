@@ -14,7 +14,7 @@ npm install -g portclean
 portclean [ports...] [options]
 
 Arguments:
-  ports         Port number(s) to target
+  ports         Port number(s) or ranges to target (e.g. 3000 or 3000-3010)
 
 Options:
   --force, -f   Skip confirmation prompt
@@ -38,7 +38,7 @@ Process 12345 (node) is using port 3000. Kill it? (y/N) y
 ### Kill multiple ports
 
 ```bash
-$ portclean 3000 8080
+$ portclean 3000 8080 9000
 Processes on port 3000:
   1. PID 12345 (node)
 Process 12345 (node) is using port 3000. Kill it? (y/N) y
@@ -48,6 +48,11 @@ Processes on port 8080:
   1. PID 54321 (python)
 Process 54321 (python) is using port 8080. Kill it? (y/N) y
 ✓ Killed process 54321 (python)
+
+Processes on port 9000:
+  1. PID 11111 (go)
+Process 11111 (go) is using port 9000. Kill it? (y/N) y
+✓ Killed process 11111 (go)
 ```
 
 ### Kill without confirmation
@@ -57,6 +62,21 @@ $ portclean 3000 --force
 Processes on port 3000:
   1. PID 12345 (node)
 ✓ Killed process 12345 (node)
+```
+
+### Kill a port range
+
+```bash
+$ portclean 3000-3010 --force
+Processes on port 3000:
+  1. PID 12345 (node)
+✓ Killed process 12345 (node)
+
+...
+
+Processes on port 3010:
+  1. PID 12399 (go)
+✓ Killed process 12399 (go)
 ```
 
 ### Kill all processes using a port
@@ -78,7 +98,7 @@ Kill all 3 process(es) on port 3000? (y/N) y
 ### Kill all processes without confirmation
 
 ```bash
-$ portclean 3000 8080 --all --force
+$ portclean 3000 8080 9000 --all --force
 Processes on port 3000:
   1. PID 12345 (node)
   2. PID 12346 (node)
@@ -88,20 +108,28 @@ Processes on port 3000:
 Processes on port 8080:
   1. PID 54321 (python)
 ✓ Killed process 54321 (python)
+
+Processes on port 9000:
+  1. PID 11111 (go)
+✓ Killed process 11111 (go)
 ```
 
 ### Kill processes on ports without --all (prompts per process)
 
 ```bash
-$ portclean 3000
+$ portclean 3000-3002
 Processes on port 3000:
   1. PID 12345 (node)
-  2. PID 12346 (node)
-  3. PID 12347 (node)
 Process 12345 (node) is using port 3000. Kill it? (y/N) y
 ✓ Killed process 12345 (node)
-Process 12346 (node) is using port 3000. Kill it? (y/N) n
-Process 12347 (node) is using port 3000. Kill it? (y/N) y
+
+Processes on port 3001:
+  1. PID 12346 (node)
+Process 12346 (node) is using port 3001. Kill it? (y/N) n
+
+Processes on port 3002:
+  1. PID 12347 (node)
+Process 12347 (node) is using port 3002. Kill it? (y/N) y
 ✓ Killed process 12347 (node)
 ```
 
@@ -110,8 +138,9 @@ Process 12347 (node) is using port 3000. Kill it? (y/N) y
 ### macOS/Linux
 
 1. **Primary method**: Uses `lsof -i :<port>` to find processes
-2. **Fallback**: If `lsof` is not available, uses `netstat -anp` and parses the output
-3. **Process names**: Extracted from the command output or via `ps` command
+2. **Fallback (Linux only)**: If `lsof` is not available, uses `netstat -anp` and parses the output (stderr suppressed)
+3. **macOS fallback**: macOS `netstat` lacks PID data, so we skip it and return no processes instead of printing errors
+4. **Process names**: Extracted from the command output or via `ps` command
 
 ### Windows
 
